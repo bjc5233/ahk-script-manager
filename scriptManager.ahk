@@ -2,7 +2,11 @@
 ;  AHK脚本管理工具
 ;    启动时, 执行配置中的ahk脚本, 并且不会展示托盘图标
 ;    右键菜单有[刷新][新增][启动][退出][删除][定位文件]
-
+;备注
+;  1.获取到的内存使用大小与任务管理器taskmgr中的不相同, 需要在taskmgr中新增显示列【工作集(内存)】
+;  2.因为不展示配置脚本的托盘图标，因此对于有些拥有图标右键菜单的脚本需要先[定位文件]，再手动执行
+;TODO
+;  1.配置是否展示托盘图标
 ;========================= 环境配置 =========================
 #Persistent
 #NoEnv
@@ -34,6 +38,14 @@ return
 
 
 LVMenu() {
+	Menu, Tray, NoStandard
+	Menu, Tray, add, 脚本管理, MenuTrayManager
+	Menu, Tray, add
+	Menu, Tray, add, 重启, MenuTrayReload
+	Menu, Tray, add, 退出, MenuTrayExit
+    Menu, Tray, Default, 脚本管理
+    Menu, Tray, Icon, %A_ScriptDir%\resources\manager.ico
+    
     Menu, scriptMenu, Add, 刷新, MenuHandler
     Menu, scriptMenu, Icon, 刷新, SHELL32.dll, 239
     Menu, scriptMenu, Add, 新增, MenuHandler
@@ -45,7 +57,6 @@ LVMenu() {
     Menu, scriptMenu, Icon, 退出, SHELL32.dll, 110
     Menu, scriptMenu, Add, 删除, MenuHandler
     Menu, scriptMenu, Icon, 删除, SHELL32.dll, 132
-    
     Menu, scriptMenu, Add, 定位文件, MenuHandler
     Menu, scriptMenu, Icon, 定位文件, SHELL32.dll, 4
 }
@@ -53,7 +64,7 @@ LVTitle() {
     titleInfos.push({"name": "name", "width": 200})
     titleInfos.push({"name": "PID", "width": 50})
     titleInfos.push({"name": "status", "width": 50})
-    titleInfos.push({"name": "memory", "width": 60})
+    titleInfos.push({"name": "memory(M)", "width": 80})
     titleInfos.push({"name": "path", "width": 300})
     for index, titleInfo in titleInfos {
         titleStr .= titleInfo.name . "|"
@@ -62,6 +73,7 @@ LVTitle() {
     titleWidthTotal += 4
 }
 LVGui() {
+    Gui, scriptListView:Destroy
     Gui, scriptListView:New
     Gui, scriptListView:Font, s9, Microsoft YaHei
     Gui, scriptListView:Add, ListView, HScroll Grid w%titleWidthTotal% r30, %titleStr%
@@ -70,7 +82,7 @@ LVGui() {
         LV_ModifyCol(index, titleInfo.width)
     }
     Gui, scriptListView:Add, StatusBar
-    Gui, scriptListView:Show, , AHKScriptManager
+    SB_SetParts(180)
 }
 
 scriptListViewGuiContextMenu(GuiHwnd, CtrlHwnd, EventInfo, IsRightClick, X, Y) {
@@ -116,7 +128,7 @@ MenuHandler(ItemName, ItemPos, MenuName) {
         scriptInfosStr := JSON.Dump(scriptInfos)
         FileDelete, %jsonFilePath%
         FileAppend, %scriptInfosStr%, %jsonFilePath%
-        SB_SetText("总计"  scriptInfos.Length() "个脚本")
+        ScriptNumTotal()
         
     } else if (ItemName == "启动") {
         Gui, scriptListView:Default
@@ -134,6 +146,7 @@ MenuHandler(ItemName, ItemPos, MenuName) {
             LV_Modify(rowNum, , , newPid, "运行", memory)
             RemoveTrayIcon(rowName)
         }
+        ScriptMemoryTotal()
     
     } else if (ItemName == "退出") {
         Gui, scriptListView:Default
@@ -147,6 +160,7 @@ MenuHandler(ItemName, ItemPos, MenuName) {
             WinClose, %rowPath%
             LV_Modify(rowNum, , , "", "停止", "")
         }
+        ScriptMemoryTotal()
     
     } else if (ItemName == "删除") {
         Gui, scriptListView:Default
@@ -180,7 +194,8 @@ MenuHandler(ItemName, ItemPos, MenuName) {
         scriptInfosStr := JSON.Dump(scriptInfos)
         FileDelete, %jsonFilePath%
         FileAppend, %scriptInfosStr%, %jsonFilePath%
-        SB_SetText("总计"  scriptInfos.Length() "个脚本")
+        ScriptNumTotal()
+        ScriptMemoryTotal()
         
     } else if (ItemName == "定位文件") {
         Gui, scriptListView:Default
@@ -228,24 +243,39 @@ LoadScripts(autoStart) {
         }
         scriptInfo.rowNum := rowNum
     }
-    SB_SetText("总计"  scriptInfos.Length() "个脚本")
+    ScriptMemoryTotal()
+    ScriptNumTotal()
 }
 
 GetMemory(ProcessId) {
     if (!objWMI)
-        objWMI := ComObjGet("winmgmts:\\.\root\cimv2")    ; 连接到WMI服务
+        objWMI := ComObjGet("winmgmts:\\.\root\cimv2")
     StrSql := "SELECT * FROM Win32_Process WHERE ProcessId="""
     StrSql .= ProcessId
     StrSql .= """"
     Info := objWMI.ExecQuery(StrSql)
     if (Info && Info.Count) {
         for ObjProc in Info {
-            usage := Round(ObjProc.WorkingSetSize / 1024 / 1024)
-            return usage "M"
+            return Round(ObjProc.WorkingSetSize / 1024 / 1024, 2)
         }
     } else {
         return ""
     }
+}
+
+ScriptNumTotal() {
+    SB_SetText("总计"  LV_GetCount() "个脚本", 1)
+}
+
+ScriptMemoryTotal() {
+    scriptMemoryTotal := 0
+    Loop % LV_GetCount()
+    {
+        LV_GetText(rowMemory, A_Index, 4)
+        scriptMemoryTotal += rowMemory
+    }
+    scriptMemoryTotal := Round(scriptMemoryTotal, 2)
+    SB_SetText("共占用"  scriptMemoryTotal "M内存", 2)
 }
 
 RemoveTrayIcon(scriptName) {
@@ -257,3 +287,21 @@ RemoveTrayIcon(scriptName) {
         }
     }
 }
+
+MenuTrayManager:
+    Gui, scriptListView:Default
+    LV_Delete()
+    LoadScripts(false)
+    Gui, scriptListView:Show, , AHKScriptManager
+return
+
+MenuTrayReload:
+    Reload
+return
+
+MenuTrayExit:
+    for index, scriptInfo in scriptInfos {
+        path :=  scriptInfo.path
+        WinClose, %path%
+    }
+ExitApp
