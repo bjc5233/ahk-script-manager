@@ -121,6 +121,10 @@ MenuHandler(ItemName, ItemPos, MenuName) {
         FileSelectFile, selectedFile, 3, C:\path\AHK, Open a file, ahk脚本文件(*.ahk)
         if (!selectedFile)
             return
+        if (selectedFile == A_ScriptFullPath) {
+            MsgBox, 不能选择自身, 请选择其他脚本
+            return
+        }
         for index, scriptInfo in scriptInfos {
             if (selectedFile == scriptInfo.path) {
                 MsgBox, 选择的脚本已存在
