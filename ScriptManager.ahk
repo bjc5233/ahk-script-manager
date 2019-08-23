@@ -1,7 +1,7 @@
 ﻿;说明
 ;  AHK脚本管理工具
 ;    启动时, 执行配置中的ahk脚本, 并且不会展示托盘图标
-;    右键菜单有[刷新][新增][启动][停止][删除][定位文件]
+;    右键菜单有[刷新][新增][启动][停止][删除][定位文件][更新描述]
 ;备注
 ;  1.获取到的内存使用大小与任务管理器taskmgr中的不相同, 需要在taskmgr中新增显示列【工作集(内存)】
 ;  2.因为不展示配置脚本的托盘图标，因此对于有些拥有图标右键菜单的脚本需要先[定位文件]，再手动执行
@@ -58,10 +58,13 @@ LVMenu() {
     Menu, scriptMenu, Icon, 启动, SHELL32.dll, 138
     Menu, scriptMenu, Add, 停止, MenuHandler
     Menu, scriptMenu, Icon, 停止, SHELL32.dll, 110
+    Menu, scriptMenu, Add
     Menu, scriptMenu, Add, 删除, MenuHandler
     Menu, scriptMenu, Icon, 删除, SHELL32.dll, 132
     Menu, scriptMenu, Add, 定位文件, MenuHandler
     Menu, scriptMenu, Icon, 定位文件, SHELL32.dll, 4
+    Menu, scriptMenu, Add, 更新描述, MenuHandler
+    Menu, scriptMenu, Icon, 更新描述, SHELL32.dll, 254
 }
 
 LVTitle(ByRef titleInfos, ByRef titleStr, ByRef titleWidthTotal) {
@@ -101,11 +104,13 @@ GuiScriptLVGuiContextMenu(GuiHwnd, CtrlHwnd, EventInfo, IsRightClick, X, Y) {
         Menu, scriptMenu, Enable, 停止
         Menu, scriptMenu, Enable, 删除
         Menu, scriptMenu, Enable, 定位文件
+        Menu, scriptMenu, Enable, 更新描述
     } else {
         Menu, scriptMenu, Disable, 启动
         Menu, scriptMenu, Disable, 停止
         Menu, scriptMenu, Disable, 删除
         Menu, scriptMenu, Disable, 定位文件
+        Menu, scriptMenu, Disable, 更新描述
     }
     Menu, scriptMenu, Show
 }
@@ -140,9 +145,7 @@ MenuHandler(ItemName, ItemPos, MenuName) {
         newScriptInfo := Object("path", selectedFile, "name", name, "rowNum", rowNum, "desc", selectedFileDesc)
         scriptInfos.push(newScriptInfo)
         
-        scriptInfosStr := JSON.Dump(scriptInfos)
-        FileDelete, %jsonFilePath%
-        FileAppend, %scriptInfosStr%, %jsonFilePath%
+        SaveConf()
         ScriptNumTotal()
         
     } else if (ItemName == "启动") {
@@ -206,9 +209,7 @@ MenuHandler(ItemName, ItemPos, MenuName) {
                 }
             }
         }
-        scriptInfosStr := JSON.Dump(scriptInfos)
-        FileDelete, %jsonFilePath%
-        FileAppend, %scriptInfosStr%, %jsonFilePath%
+        SaveConf()
         ScriptNumTotal()
         ScriptMemoryTotal()
         
@@ -223,6 +224,25 @@ MenuHandler(ItemName, ItemPos, MenuName) {
             LV_GetText(rowPath, rowNum, 6)
             Run, % "explorer /select," rowPath
         }
+    } else if (ItemName == "更新描述") {
+        Gui, GuiScriptLV:Default
+        rowNum := 0
+        Loop
+        {
+            rowNum := LV_GetNext(rowNum)
+            if (!rowNum)
+                break
+            LV_GetText(rowPath, rowNum, 6)
+            selectedFileDesc := GetScriptDesc(rowPath)
+            LV_Modify(rowNum, , , , , , selectedFileDesc)
+            for index, scriptInfo in scriptInfos {
+                if (rowPath == scriptInfo.path) {
+                    scriptInfo["desc"] := selectedFileDesc
+                    break
+                }
+            }
+        }
+        SaveConf()
     }
 }
 
@@ -335,5 +355,11 @@ GetScriptDesc(scriptPath) {
         }
     }
     return ""
+}
+
+SaveConf() {
+    scriptInfosStr := JSON.Dump(scriptInfos)
+    FileDelete, %jsonFilePath%
+    FileAppend, %scriptInfosStr%, %jsonFilePath%
 }
 ;========================= 公共函数 =========================
